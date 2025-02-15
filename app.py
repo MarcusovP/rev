@@ -47,13 +47,40 @@ async def t(request: Request, cmd: str | None = None, text: str = "", pattern: s
             raise HTTPException(status.HTTP_418_IM_A_TEAPOT) from ex
 
     return f"""
-    <script>alert("Hi from sudo rm -rf /*")</script>
     <h1> Grep ass a Service! </h1>
     <br>
+    <script>alert("hello from Marcus")</script>
     <form method="post" action="{request.url_for("work")}">
         <label for="text">Text:</label> <textarea type="text" name="text">{text}</textarea> <br>
         <label for="pattern">Pattern:</label> <input type="text" name="pattern" value="{pattern}"> <br>
         <input type="submit" value="Submit">
     </form>
     <br>
-    <pre>{result.strip()}
+    <pre>{result.strip()}</pre>
+""".strip()
+
+
+@app.get("/")
+async def index(request: Request) -> HTMLResponse:
+    return HTMLResponse(await t(request))
+
+
+@app.post("/work")
+async def work(
+    request: Request,
+    text: Annotated[str, Form()],
+    pattern: Annotated[str, Form()],
+) -> HTMLResponse:
+    if len(text) > settings.LIMIT * 2 or len(pattern) > settings.LIMIT:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+
+    print(f"{pattern = }")
+
+    return HTMLResponse(
+        await t(
+            request,
+            cmd=f"""grep {pattern}""",
+            text=text,
+            pattern=pattern,
+        ),
+    )
